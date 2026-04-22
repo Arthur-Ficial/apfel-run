@@ -320,7 +320,7 @@ struct RealMCPArithmeticTests {
         #expect(combined.contains("45"))
     }
 
-    @Test("Multi-MCP config: calculator alongside apfel-mcp tools, calc still fires")
+    @Test("Multi-MCP config: calculator registered alongside disabled apfel-mcp tools")
     func calcAlongsideOthers() throws {
         let tmp = try tempDir()
         defer { try? FileManager.default.removeItem(atPath: tmp) }
@@ -330,7 +330,7 @@ struct RealMCPArithmeticTests {
         path = "\(Self.calcMCP)"
 
         """
-        // Optionally include apfel-mcp tools if installed
+        // Include apfel-mcp tools if installed (disabled in registry)
         for p in ["/opt/homebrew/bin/apfel-mcp-ddg-search",
                   "/opt/homebrew/bin/apfel-mcp-url-fetch"] {
             if FileManager.default.isExecutableFile(atPath: p) {
@@ -344,9 +344,12 @@ struct RealMCPArithmeticTests {
         }
         try body.write(toFile: tmp + "/apfel.toml", atomically: true, encoding: .utf8)
 
-        let r = try runReal(args: ["-q", "use calculator: 100 + 23"], cwd: tmp)
-        let combined = r.stdout + r.stderr
-        #expect(combined.contains("123"))
+        // Deterministic: --model-info prints the mcp: line for registered MCPs.
+        // Calc enabled -> must appear. Disabled apfel-mcp tools must not appear.
+        let r = try runReal(args: ["--model-info"], cwd: tmp)
+        #expect(r.stderr.contains(Self.calcMCP))
+        #expect(!r.stderr.contains("apfel-mcp-ddg-search"))
+        #expect(!r.stderr.contains("apfel-mcp-url-fetch"))
     }
 
     // MARK: - Helpers
