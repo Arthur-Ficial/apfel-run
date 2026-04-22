@@ -8,8 +8,17 @@ let package = Package(
         .executable(name: "apfel-run", targets: ["apfel-run"]),
         .library(name: "ApfelRunCore", targets: ["ApfelRunCore"]),
     ],
+    dependencies: [
+        .package(url: "https://github.com/LebJe/TOMLKit.git", from: "0.6.0"),
+    ],
     targets: [
-        .target(name: "ApfelRunCore", path: "Sources/ApfelRunCore"),
+        .target(
+            name: "ApfelRunCore",
+            dependencies: [
+                .product(name: "TOMLKit", package: "TOMLKit"),
+            ],
+            path: "Sources/ApfelRunCore"
+        ),
         .executableTarget(
             name: "apfel-run",
             dependencies: ["ApfelRunCore"],
