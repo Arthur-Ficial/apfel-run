@@ -2,11 +2,12 @@ import Foundation
 
 public enum ConfigSource: Equatable, Sendable {
     case none
-    case envOverride
-    case projectLocal
-    case globalXDG
-    case globalHome
-    case legacyMCPConf
+    case envOverride     // $APFEL_RUN_CONFIG
+    case projectLocal    // ./apfel.toml or ./apfel.json
+    case globalXDG       // $XDG_CONFIG_HOME/apfel/config.{toml,json}
+    case globalHome      // ~/.config/apfel/config.{toml,json} (XDG default)
+    case systemXDG       // $XDG_CONFIG_DIRS/apfel/config.{toml,json} (default /etc/xdg)
+    case legacyMCPConf   // ~/.config/apfel/mcps.conf (v0.1 fallback)
 }
 
 public struct LoaderResult: Equatable, Sendable {
@@ -56,39 +57,44 @@ public enum ConfigLoader {
         }
 
         // 2. Project-local
-        let projTOML = cwd + "/apfel.toml"
-        let projJSON = cwd + "/apfel.json"
-        if FileManager.default.fileExists(atPath: projTOML),
-           let cfg = try readFormatted(path: projTOML) {
-            return LoaderResult(config: cfg, source: .projectLocal, path: projTOML)
-        }
-        if FileManager.default.fileExists(atPath: projJSON),
-           let cfg = try readFormatted(path: projJSON) {
-            return LoaderResult(config: cfg, source: .projectLocal, path: projJSON)
+        for ext in ["toml", "json"] {
+            let path = cwd + "/apfel." + ext
+            if FileManager.default.fileExists(atPath: path),
+               let cfg = try readFormatted(path: path) {
+                return LoaderResult(config: cfg, source: .projectLocal, path: path)
+            }
         }
 
-        // 3. Global XDG or home
-        let xdgBase: String
-        if let xdg = environment["XDG_CONFIG_HOME"], !xdg.isEmpty {
-            xdgBase = xdg
+        // 3. User config: $XDG_CONFIG_HOME or ~/.config (XDG default)
+        let xdgHomeExplicit = !(environment["XDG_CONFIG_HOME"]?.isEmpty ?? true)
+        let userBase: String
+        if xdgHomeExplicit, let xdg = environment["XDG_CONFIG_HOME"] {
+            userBase = xdg
         } else {
-            xdgBase = home + "/.config"
+            userBase = home + "/.config"
         }
-        let globalTOML = xdgBase + "/apfel/config.toml"
-        let globalJSON = xdgBase + "/apfel/config.json"
-        let globalSource: ConfigSource =
-            (environment["XDG_CONFIG_HOME"]?.isEmpty == false) ? .globalXDG : .globalHome
-
-        if FileManager.default.fileExists(atPath: globalTOML),
-           let cfg = try readFormatted(path: globalTOML) {
-            return LoaderResult(config: cfg, source: globalSource, path: globalTOML)
-        }
-        if FileManager.default.fileExists(atPath: globalJSON),
-           let cfg = try readFormatted(path: globalJSON) {
-            return LoaderResult(config: cfg, source: globalSource, path: globalJSON)
+        let userSource: ConfigSource = xdgHomeExplicit ? .globalXDG : .globalHome
+        for ext in ["toml", "json"] {
+            let path = userBase + "/apfel/config." + ext
+            if FileManager.default.fileExists(atPath: path),
+               let cfg = try readFormatted(path: path) {
+                return LoaderResult(config: cfg, source: userSource, path: path)
+            }
         }
 
-        // 4. Legacy mcps.conf fallback (v0.2 grace; v0.3 removes)
+        // 4. System config: $XDG_CONFIG_DIRS (colon-separated, first-hit-wins)
+        //    Default is /etc/xdg per the XDG Base Directory Spec.
+        for dir in systemConfigDirs(environment: environment) {
+            for ext in ["toml", "json"] {
+                let path = dir + "/apfel/config." + ext
+                if FileManager.default.fileExists(atPath: path),
+                   let cfg = try readFormatted(path: path) {
+                    return LoaderResult(config: cfg, source: .systemXDG, path: path)
+                }
+            }
+        }
+
+        // 5. Legacy mcps.conf fallback (v0.2 grace; v0.3 removes)
         let legacy = home + "/.config/apfel/mcps.conf"
         if FileManager.default.fileExists(atPath: legacy),
            let cfg = try readLegacy(path: legacy) {
@@ -96,6 +102,55 @@ public enum ConfigLoader {
         }
 
         return LoaderResult(config: ApfelConfig(), source: .none, path: nil)
+    }
+
+    /// Returns every path the loader would inspect for the given environment,
+    /// in priority order. Primary use: `apfel-run config path --all` and docs.
+    public static func searchPaths(environment: [String: String],
+                                   cwd: String,
+                                   home: String) -> [String] {
+        var paths: [String] = []
+
+        if let override = environment["APFEL_RUN_CONFIG"], !override.isEmpty {
+            paths.append(override)
+        }
+
+        // Project-local
+        for ext in ["toml", "json"] {
+            paths.append(cwd + "/apfel." + ext)
+        }
+
+        // User config
+        let userBase: String
+        if let xdg = environment["XDG_CONFIG_HOME"], !xdg.isEmpty {
+            userBase = xdg
+        } else {
+            userBase = home + "/.config"
+        }
+        for ext in ["toml", "json"] {
+            paths.append(userBase + "/apfel/config." + ext)
+        }
+
+        // System config (XDG_CONFIG_DIRS, default /etc/xdg)
+        for dir in systemConfigDirs(environment: environment) {
+            for ext in ["toml", "json"] {
+                paths.append(dir + "/apfel/config." + ext)
+            }
+        }
+
+        // Legacy
+        paths.append(home + "/.config/apfel/mcps.conf")
+
+        return paths
+    }
+
+    /// $XDG_CONFIG_DIRS split on colon, empty entries removed. Defaults to
+    /// ["/etc/xdg"] per the XDG Base Directory Spec.
+    static func systemConfigDirs(environment: [String: String]) -> [String] {
+        if let raw = environment["XDG_CONFIG_DIRS"], !raw.isEmpty {
+            return raw.split(separator: ":").map(String.init).filter { !$0.isEmpty }
+        }
+        return ["/etc/xdg"]
     }
 
     // MARK: - Helpers

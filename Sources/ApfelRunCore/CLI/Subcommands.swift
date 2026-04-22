@@ -91,6 +91,31 @@ public enum Subcommands {
         return Result(stdout: "")
     }
 
+    /// Full search-path listing for `apfel-run config path --all`.
+    /// Shows every location the loader would inspect, in priority order,
+    /// with [x] marker next to the one that was actually picked (if any).
+    public static func configPathAll(loaderResult: LoaderResult,
+                                     environment: [String: String],
+                                     cwd: String,
+                                     home: String) -> Result {
+        let paths = ConfigLoader.searchPaths(environment: environment, cwd: cwd, home: home)
+        var lines = ["apfel-run config search path (first hit wins):"]
+        for p in paths {
+            let exists = FileManager.default.fileExists(atPath: p)
+            let picked = (loaderResult.path == p)
+            let marker = picked ? "[x]" : (exists ? "[-]" : "[ ]")
+            lines.append("  \(marker) \(p)")
+        }
+        lines.append("")
+        lines.append("Legend: [x] loaded, [-] exists but not loaded, [ ] does not exist")
+        if let chosen = loaderResult.path {
+            lines.append("Active: \(chosen)  (source: \(loaderResult.source))")
+        } else {
+            lines.append("Active: (none - running with apfel defaults)")
+        }
+        return Result(stdout: lines.joined(separator: "\n") + "\n")
+    }
+
     // MARK: - config validate
 
     public static func configValidate(loaderResult: LoaderResult) -> Result {

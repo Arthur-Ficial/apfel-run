@@ -89,17 +89,45 @@ One entry per MCP server. Enabled entries are joined into `APFEL_MCP` env var (c
 
 Example: profile says `port = 11434`, you run `apfel-run -p serve --port 11500` - apfel gets `--port 11434 --port 11500` and picks the last one (11500).
 
-## File discovery
+## File discovery (XDG Base Directory Spec)
 
-First hit wins. No merging.
+First hit wins. No merging. Follows https://specifications.freedesktop.org/basedir-spec/latest/.
 
-1. `$APFEL_RUN_CONFIG` (if set and non-empty)
-2. `./apfel.toml` or `./apfel.json`
-3. `$XDG_CONFIG_HOME/apfel/config.{toml,json}`
-4. `~/.config/apfel/config.{toml,json}`
-5. `~/.config/apfel/mcps.conf` (legacy v0.1; v0.3 will remove)
+| # | Location | Source label |
+|---|---|---|
+| 1 | `$APFEL_RUN_CONFIG` (explicit full path) | `envOverride` |
+| 2 | `./apfel.toml` or `./apfel.json` (project-local) | `projectLocal` |
+| 3 | `$XDG_CONFIG_HOME/apfel/config.{toml,json}` | `globalXDG` |
+| 4 | `~/.config/apfel/config.{toml,json}` (XDG default when `XDG_CONFIG_HOME` unset) | `globalHome` |
+| 5 | `$XDG_CONFIG_DIRS/apfel/config.{toml,json}` (system config, default `/etc/xdg`) | `systemXDG` |
+| 6 | `~/.config/apfel/mcps.conf` (legacy v0.1 grace; v0.3 removes) | `legacyMCPConf` |
 
-If both `.toml` and `.json` exist in the same directory, `.toml` wins.
+### Details
+
+- `$XDG_CONFIG_DIRS` is **colon-separated** - left-most directory wins within that layer. Example: `XDG_CONFIG_DIRS=/etc/apfel-overrides:/etc/xdg` searches `/etc/apfel-overrides/apfel/config.{toml,json}` first.
+- When both `.toml` and `.json` exist in the same directory, `.toml` wins (documented in `LoaderTests`).
+- An unreadable file in an early tier does NOT silently fall through - `apfel-run config validate` fails loud with the path. The execve path (`apfel-run --serve ...`) treats unreadable files as empty and proceeds, matching UNIX-convention "missing config is not an error" semantics.
+
+### Inspecting the cascade
+
+```bash
+apfel-run config path           # active config file path, or empty if none loaded
+apfel-run config path --all     # every path the loader tries, with status markers
+```
+
+`config path --all` marks each candidate:
+- `[x]` - the file that got loaded
+- `[-]` - the file exists on disk but was skipped (a higher-priority file won)
+- `[ ]` - the file does not exist
+
+### Why this layout
+
+apfel-run uses the same cascade that `git`, `ssh`, `kubectl`, and every other modern UNIX CLI uses. You get:
+- **Predictable overrides** - env var > project-local > user > system
+- **Zero surprise** - the XDG spec is ~20 years old and documented everywhere
+- **Composability** - per-user configs in `$HOME`, per-machine defaults in `/etc/xdg`, per-project overrides in the project root, per-run overrides via env
+
+Raw "where does it write?" question: `apfel-run config init` writes to `$XDG_CONFIG_HOME/apfel/config.toml` (default `~/.config/apfel/config.toml`). You can override with `apfel-run config init /any/path.toml`.
 
 ## Validation errors
 

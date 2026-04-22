@@ -73,7 +73,14 @@ func handleConfigSubcommand(subArgs: [String]) {
         write(r)
 
     case "path":
-        write(Subcommands.configPath(loaderResult: loader))
+        if tail.contains("--all") {
+            write(Subcommands.configPathAll(loaderResult: loader,
+                                            environment: env,
+                                            cwd: cwd,
+                                            home: home))
+        } else {
+            write(Subcommands.configPath(loaderResult: loader))
+        }
 
     case "validate":
         write(Subcommands.configValidate(loaderResult: loader))
@@ -213,7 +220,9 @@ func helpText() -> String {
     SUBCOMMANDS:
       config show [--format toml|json|flags] [--profile NAME]
                     Print the current config (default: TOML canonical form)
-      config path   Print the discovered config file path
+      config path [--all]
+                    Print the discovered config file path, or with --all
+                    the full search cascade with [x]/[-]/[ ] markers
       config validate
                     Validate the config; exit 1 with line-level errors if bad
       config profiles
@@ -234,17 +243,26 @@ func helpText() -> String {
       --help, -h           Print this help
       --version, -v        Print apfel-run's own version
 
-    CONFIG DISCOVERY (first hit wins):
-      1. $APFEL_RUN_CONFIG    (explicit override)
-      2. ./apfel.toml or ./apfel.json
+    CONFIG DISCOVERY (first hit wins) - follows XDG Base Directory Spec:
+      1. $APFEL_RUN_CONFIG                   explicit file override (any path)
+      2. ./apfel.toml or ./apfel.json        project-local (committable, team-shareable)
       3. $XDG_CONFIG_HOME/apfel/config.{toml,json}
-      4. ~/.config/apfel/config.{toml,json}
-      5. ~/.config/apfel/mcps.conf  (legacy fallback, will be removed in v0.3)
+                                             user config (default: ~/.config)
+      4. $XDG_CONFIG_DIRS/apfel/config.{toml,json}
+                                             system config, colon-separated list
+                                             (default: /etc/xdg, per XDG spec)
+      5. ~/.config/apfel/mcps.conf           legacy v0.1 (will be removed in v0.3)
+
+      To see exactly which paths will be tried on your machine right now:
+        apfel-run config path --all
 
     ENVIRONMENT:
-      APFEL_RUN_CONFIG          Path to config file (overrides discovery)
+      APFEL_RUN_CONFIG          Path to config file (bypasses discovery cascade)
       APFEL_RUN_PROFILE         Profile name (overridden by --profile flag)
       APFEL_RUN_APFEL_BINARY    Custom path to the apfel binary
+      XDG_CONFIG_HOME           User config root (default: ~/.config) - XDG Base Dir Spec
+      XDG_CONFIG_DIRS           System config search path, colon-separated
+                                (default: /etc/xdg)
       APFEL_MCP                 Your shell-set MCPs; prepended to config's list
 
     Full reference:  https://github.com/Arthur-Ficial/apfel-run/blob/main/docs/config-reference.md
