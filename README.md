@@ -4,7 +4,22 @@
 
 apfel already reads an `APFEL_MCP` environment variable - colon/comma-separated list of MCP server paths. That covers the "set once, forget" case perfectly. `apfel-run` sits one layer up: a plain text config file where you list all your MCPs and flip them on or off by commenting/uncommenting a line, the same way `~/.ssh/config` and `~/.gitconfig` work.
 
-No new flags in apfel. No bespoke config format. apfel stays small, apfel-run stays <200 lines, your MCPs live in a file you can `grep` and `$EDITOR`.
+No new flags in apfel. No bespoke config format. apfel stays small, apfel-run stays <300 lines, your MCPs live in a file you can `grep` and `$EDITOR`.
+
+## Use it exactly like you use apfel
+
+`apfel-run` is a drop-in for the `apfel` binary. Every apfel flag and every apfel prompt forwards through unchanged - the only things it adds are `--list`, `--config-path`, its own `--help`/`--version`, and the registry behaviour. You can `alias apfel=apfel-run` in your shell config and nothing else changes.
+
+```bash
+apfel-run "what is 42 * 137?"                     # prompt
+apfel-run --serve --port 11434 --token-auto       # server mode
+apfel-run --chat --stream                         # streaming chat
+apfel-run --mcp ./extra.py "..."                  # ad-hoc MCP stacks on registry
+apfel-run --model-info                            # diagnostics
+apfel-run -- --help                               # apfel's own --help (when you need it)
+```
+
+47 unit tests cover the passthrough surface, including a parameterised collision test across **every flag apfel defines** (102 cases), so we catch any new apfel flag the day it ships.
 
 ## Install
 

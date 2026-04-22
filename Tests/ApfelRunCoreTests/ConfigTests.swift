@@ -200,6 +200,56 @@ struct PlannerTests {
         #expect(plan.forwardedArgs == ["what is 42?", "--stream"])
     }
 
+    @Test("apfel-run flags past position 0 are forwarded, not intercepted")
+    func flagsPastFirstForward() {
+        // User wants to ask apfel something that happens to contain --list
+        let plan = Planner.plan(args: ["what files to --list?", "--stream"],
+                                config: config, environment: [:], configPath: configPath)
+        #expect(plan.forwardedArgs == ["what files to --list?", "--stream"])
+        #expect(!plan.listOnly)
+    }
+
+    @Test("--help past position 0 is forwarded to apfel (not ours)")
+    func helpPastFirstForwards() {
+        let plan = Planner.plan(args: ["prompt", "--help"],
+                                config: config, environment: [:], configPath: configPath)
+        #expect(plan.forwardedArgs == ["prompt", "--help"])
+        #expect(!plan.showHelp)
+    }
+
+    @Test("all apfel mode flags forward through cleanly")
+    func apfelModeFlagsForward() {
+        // --serve, --chat, --stream, --mcp, --mcp-timeout, --mcp-token,
+        // --port, --host, --token, --model-info, --system, --temperature,
+        // --max-tokens, --json, --quiet, -q, --release, --context-strategy
+        let apfelArgs = ["--serve", "--port", "11434",
+                         "--mcp", "/x.py", "--mcp-timeout", "30",
+                         "--system", "be terse", "--temperature", "0.7",
+                         "--max-tokens", "500", "--json", "--quiet"]
+        let plan = Planner.plan(args: apfelArgs, config: config, environment: [:], configPath: configPath)
+        #expect(plan.forwardedArgs == apfelArgs)
+    }
+
+    @Test("single-char --chat as first arg forwards (not one of our flags)")
+    func chatForwarded() {
+        let plan = Planner.plan(args: ["--chat"], config: config, environment: [:], configPath: configPath)
+        #expect(plan.forwardedArgs == ["--chat"])
+        #expect(!plan.showHelp)
+    }
+
+    @Test("apfel -v at position 1+ forwards as apfel version check")
+    func versionPassesWhenNotFirst() {
+        let plan = Planner.plan(args: ["prompt", "-v"], config: config, environment: [:], configPath: configPath)
+        #expect(plan.forwardedArgs == ["prompt", "-v"])
+        #expect(!plan.showVersion)
+    }
+
+    @Test("-- marker alone with no trailing args means empty forward")
+    func doubleDashAlone() {
+        let plan = Planner.plan(args: ["--"], config: config, environment: [:], configPath: configPath)
+        #expect(plan.forwardedArgs.isEmpty)
+    }
+
     @Test("existing APFEL_MCP is prepended, config appended")
     func existingMCPMerged() {
         let plan = Planner.plan(args: [],
@@ -234,6 +284,107 @@ struct PlannerTests {
                                 environment: ["APFEL_MCP": "/existing.py"],
                                 configPath: configPath)
         #expect(plan.environment["APFEL_MCP"] == "/existing.py")
+    }
+}
+
+/// Exhaustive collision coverage - every single apfel flag (v1.0.5) forwards
+/// as first-arg EXCEPT the four we deliberately shadow (--help/-h/--version/-v).
+///
+/// If apfel grows a new flag starting with --l/--c/--v/--h, this suite fails
+/// and we decide: bless the new flag (add to apfelFlags), or document an escape.
+@Suite("apfel flag collision coverage")
+struct ApfelFlagCollisionTests {
+    /// Every flag currently defined in apfel/Sources/CLI/CLIArguments.swift.
+    /// Alphabetised. Source of truth: the apfel repo.
+    static let apfelFlags: [String] = [
+        "-f", "-o", "-q", "-s",
+        "--allowed-origins", "--benchmark", "--chat", "--context-max-turns",
+        "--context-output-reserve", "--context-strategy", "--cors", "--debug",
+        "--file", "--footgun", "--host", "--max-concurrent", "--max-tokens",
+        "--mcp", "--mcp-timeout", "--mcp-token", "--model-info", "--no-color",
+        "--no-origin-check", "--output", "--permissive", "--port",
+        "--public-health", "--quiet", "--release", "--retry", "--seed",
+        "--serve", "--stream", "--system", "--system-file", "--temperature",
+        "--token", "--token-auto", "--update",
+    ]
+
+    /// Flags apfel-run intercepts at position 0. User escapes with `--`.
+    static let shadowedFlags: [String] = ["--help", "-h", "--version", "-v"]
+
+    let config = ConfigParser.parse("/a.py\n")
+    let configPath = "/tmp/mcps.conf"
+
+    @Test("every non-shadowed apfel flag forwards verbatim at position 0",
+          arguments: apfelFlags)
+    func nonShadowedFlagsForwardAsFirstArg(flag: String) {
+        let plan = Planner.plan(args: [flag], config: config, environment: [:], configPath: configPath)
+        #expect(plan.forwardedArgs == [flag])
+        #expect(!plan.listOnly && !plan.showHelp && !plan.showVersion && !plan.showConfigPath)
+    }
+
+    @Test("every apfel flag forwards when preceded by another arg (any position > 0)",
+          arguments: apfelFlags + shadowedFlags)
+    func allFlagsForwardWhenNotFirst(flag: String) {
+        let plan = Planner.plan(args: ["prompt", flag],
+                                config: config, environment: [:], configPath: configPath)
+        #expect(plan.forwardedArgs == ["prompt", flag])
+        #expect(!plan.showHelp && !plan.showVersion && !plan.listOnly)
+    }
+
+    @Test("shadowed flags always escape via --",
+          arguments: shadowedFlags)
+    func shadowedFlagsEscapeWithDoubleDash(flag: String) {
+        let plan = Planner.plan(args: ["--", flag],
+                                config: config, environment: [:], configPath: configPath)
+        #expect(plan.forwardedArgs == [flag])
+        #expect(!plan.showHelp && !plan.showVersion)
+    }
+
+    @Test("shadowed flags are intercepted at position 0 (documented)",
+          arguments: shadowedFlags)
+    func shadowedFlagsAreIntercepted(flag: String) {
+        let plan = Planner.plan(args: [flag], config: config, environment: [:], configPath: configPath)
+        #expect(plan.forwardedArgs.isEmpty)
+        #expect(plan.showHelp || plan.showVersion)
+    }
+
+    @Test("realistic apfel invocations forward as a whole",
+          arguments: [
+            ["--serve", "--port", "11434", "--token-auto"],
+            ["--chat", "--mcp", "/x.py", "--mcp-timeout", "30"],
+            ["--stream", "-s", "you are terse"],
+            ["--system-file", "/etc/prompts.txt", "--temperature", "0.3"],
+            ["--benchmark", "--max-concurrent", "4"],
+            ["--context-strategy", "sliding", "--context-max-turns", "10"],
+            ["--output", "json", "--quiet"],
+            ["-o", "plain", "-q"],
+            ["-f", "./input.txt"],
+            ["what is 2 + 2?"],
+            ["--retry", "3", "--seed", "42", "a prompt"],
+            ["--footgun", "--public-health", "--no-origin-check"],
+            ["--allowed-origins", "https://app.example.com", "--cors"],
+          ])
+    func realisticInvocations(argv: [String]) {
+        let plan = Planner.plan(args: argv, config: config, environment: [:], configPath: configPath)
+        #expect(plan.forwardedArgs == argv)
+        #expect(!plan.listOnly && !plan.showHelp && !plan.showVersion && !plan.showConfigPath)
+        #expect(plan.environment["APFEL_MCP"] == "/a.py")
+    }
+
+    @Test("apfel-run --list wins over trailing apfel flags")
+    func apfelRunOwnFlagAtPosZero() {
+        let plan = Planner.plan(args: ["--list", "--serve"],
+                                config: config, environment: [:], configPath: configPath)
+        #expect(plan.listOnly)
+        #expect(plan.forwardedArgs.isEmpty)
+    }
+
+    @Test("bare invocation = apfel with registry, no forwarded args")
+    func noArgs() {
+        let plan = Planner.plan(args: [], config: config, environment: [:], configPath: configPath)
+        #expect(plan.forwardedArgs.isEmpty)
+        #expect(!plan.listOnly && !plan.showHelp && !plan.showVersion)
+        #expect(plan.environment["APFEL_MCP"] == "/a.py")
     }
 }
 
