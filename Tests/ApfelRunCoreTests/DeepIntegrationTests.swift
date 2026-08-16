@@ -218,13 +218,16 @@ struct DeepIntegrationTests {
         #expect(FileManager.default.fileExists(atPath: target))
     }
 
-    @Test("Calling apfel-run with just --help is fast (< 1s)")
+    @Test("Calling apfel-run with just --help is fast (< 3s)")
     func helpIsFast() throws {
         let start = Date()
         let r = try run(args: ["--help"])
         let elapsed = Date().timeIntervalSince(start)
         #expect(r.exit == 0)
-        #expect(elapsed < 1.0, "help took \(elapsed)s - expected < 1s")
+        // Load-tolerant threshold: this catches a pathological hang without
+        // flaking on a busy machine / shared CI runner (a subprocess spawn can
+        // take ~1.4s under heavy background load). See apfel-run#5.
+        #expect(elapsed < 3.0, "help took \(elapsed)s - expected < 3s")
     }
 
     // MARK: - Helpers
