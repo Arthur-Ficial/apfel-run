@@ -78,7 +78,15 @@ One entry per MCP server. Enabled entries are joined into `APFEL_MCP` env var (c
 |---|---|---|---|---|
 | `path` | string | `APFEL_MCP` (joined) | **required** | Local path or URL (http/https). Paths must exist at runtime; URLs validated by apfel. |
 | `enabled` | bool | (skipped if false) | true | Set false to disable without deleting |
-| `token_env` | string | per-server auth override | nil | Reserved for future per-MCP auth |
+| `token_env` | string | `APFEL_MCP_TOKEN` env | nil | Explicit per-server token override. When set AND non-empty it beats a stored OAuth token (`config validate` warns about the combination). |
+| `auth` | `"oauth"` | `APFEL_MCP_TOKEN` env (from Keychain) | nil | OAuth 2.1 marker: the token stored by `apfel-run auth login <path>` is resolved (and refreshed) at launch. Requires an `https://` path. At most ONE enabled `auth = "oauth"` server per profile (apfel core has a single `APFEL_MCP_TOKEN` today, apfel#386). See [docs/auth.md](auth.md). |
+
+Launch-time token precedence for an `auth = "oauth"` server (highest first):
+
+1. that server's `token_env` (set and non-empty) - explicit override, Keychain untouched
+2. Keychain credential from `apfel-run auth login` (auto-refreshed when expired)
+3. shared `mcp.token_env` fallback
+4. nothing -> apfel-run aborts with exit 1 and an `apfel-run auth login <url>` hint (it never execs apfel into a guaranteed 401)
 
 ## Precedence (lowest to highest)
 

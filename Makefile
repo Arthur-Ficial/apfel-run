@@ -1,4 +1,4 @@
-.PHONY: build test release install uninstall clean version
+.PHONY: build test smoke-auth release install uninstall clean version
 
 VERSION := $(shell cat .version)
 PREFIX := /usr/local
@@ -8,6 +8,12 @@ build:
 
 test:
 	swift test
+
+# OAuth loopback smoke test against a local fake AS (scripts/auth-loopback-smoke.sh).
+# Separate from `make test` because it touches the real user Keychain
+# (creates and removes one item) and needs the release binary.
+smoke-auth: build
+	bash scripts/auth-loopback-smoke.sh
 
 version:
 	@echo $(VERSION)

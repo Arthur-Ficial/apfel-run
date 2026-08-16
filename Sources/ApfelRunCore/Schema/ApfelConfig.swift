@@ -128,19 +128,28 @@ public struct ServerSettings: Codable, Equatable, Sendable {
     }
 }
 
+/// Authentication kind for a remote MCP server.
+/// `oauth` = OAuth 2.1 via `apfel-run auth login` (token stored in Keychain).
+public enum MCPAuthKind: String, Codable, Equatable, Sendable, CaseIterable {
+    case oauth
+}
+
 public struct MCPServer: Codable, Equatable, Sendable {
     public var path: String
     public var enabled: Bool
     public var tokenEnv: String?
+    public var auth: MCPAuthKind?
 
-    public init(path: String, enabled: Bool = true, tokenEnv: String? = nil) {
+    public init(path: String, enabled: Bool = true, tokenEnv: String? = nil,
+                auth: MCPAuthKind? = nil) {
         self.path = path
         self.enabled = enabled
         self.tokenEnv = tokenEnv
+        self.auth = auth
     }
 
     enum CodingKeys: String, CodingKey {
-        case path, enabled
+        case path, enabled, auth
         case tokenEnv = "token_env"
     }
 
@@ -149,6 +158,7 @@ public struct MCPServer: Codable, Equatable, Sendable {
         self.path = try c.decode(String.self, forKey: .path)
         self.enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
         self.tokenEnv = try c.decodeIfPresent(String.self, forKey: .tokenEnv)
+        self.auth = try c.decodeIfPresent(MCPAuthKind.self, forKey: .auth)
     }
 }
 

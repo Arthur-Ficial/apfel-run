@@ -348,4 +348,63 @@ struct FlagBuilderTests {
         #expect(b.env["APFEL_MCP"] == "/calc.py")
         #expect(b.env["APFEL_MCP_TIMEOUT"] == "30")
     }
+
+    // MARK: - OAuth launch token (apfel-run#1)
+
+    @Test("launchToken sets APFEL_MCP_TOKEN and beats mcp.token_env")
+    func launchTokenBeatsSharedEnv() {
+        let p = Profile(mcp: MCPSettings(tokenEnv: "SHARED_VAR",
+                                         servers: [MCPServer(path: "https://mcp.example.com/mcp",
+                                                             auth: .oauth)]))
+        let token = ResolvedLaunchToken(token: "OAUTH1",
+                                        server: "https://mcp.example.com/mcp",
+                                        source: .keychain)
+        let b = FlagBuilder.build(profile: p, userArgs: [],
+                                  environment: ["SHARED_VAR": "SHARED"],
+                                  launchToken: token)
+        #expect(b.env["APFEL_MCP_TOKEN"] == "OAUTH1")
+    }
+
+    @Test("nil launchToken preserves existing shared token_env behavior")
+    func nilLaunchTokenPreservesSharedEnv() {
+        // PIN: default-parameter regression guard - byte-identical to the
+        // pre-launchToken semantics.
+        let p = Profile(mcp: MCPSettings(tokenEnv: "SHARED_VAR",
+                                         servers: [MCPServer(path: "/calc.py")]))
+        let b = FlagBuilder.build(profile: p, userArgs: [],
+                                  environment: ["SHARED_VAR": "SHARED"])
+        #expect(b.env["APFEL_MCP_TOKEN"] == "SHARED")
+        let empty = FlagBuilder.build(profile: p, userArgs: [], environment: [:])
+        #expect(empty.env["APFEL_MCP_TOKEN"] == nil)
+        #expect(empty.warnings.contains { $0.contains("SHARED_VAR") })
+    }
+
+    @Test("launchToken suppresses the per-server token_env warning for that server only")
+    func launchTokenSuppressesWarningForItsServer() {
+        let p = Profile(mcp: MCPSettings(servers: [
+            MCPServer(path: "https://mcp.example.com/mcp", tokenEnv: "UNSET_A", auth: .oauth),
+            MCPServer(path: "/other/mcp.py", tokenEnv: "UNSET_B"),
+        ]))
+        let token = ResolvedLaunchToken(token: "OAUTH1",
+                                        server: "https://mcp.example.com/mcp",
+                                        source: .keychain)
+        let b = FlagBuilder.build(profile: p, userArgs: [], environment: [:], launchToken: token)
+        #expect(!b.warnings.contains { $0.contains("UNSET_A") })
+        #expect(b.warnings.contains { $0.contains("UNSET_B") })
+    }
+
+    @Test("no warning about oauth server when launchToken present")
+    func noOAuthWarningWithLaunchToken() {
+        let p = Profile(mcp: MCPSettings(servers: [
+            MCPServer(path: "https://mcp.example.com/mcp", auth: .oauth),
+        ]))
+        let token = ResolvedLaunchToken(token: "OAUTH1",
+                                        server: "https://mcp.example.com/mcp",
+                                        source: .keychain)
+        let b = FlagBuilder.build(profile: p, userArgs: [], environment: [:], launchToken: token)
+        #expect(b.warnings.isEmpty)
+        #expect(b.env["APFEL_MCP_TOKEN"] == "OAUTH1")
+        // Token travels via env, never argv (no token in ps aux)
+        #expect(!b.argv.contains { $0.contains("OAUTH1") })
+    }
 }
