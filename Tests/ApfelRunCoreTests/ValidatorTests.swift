@@ -167,4 +167,71 @@ struct ValidatorTests {
         let diagnostics = ConfigValidator.validate(cfg)
         #expect(diagnostics.contains { $0.severity == .warning && $0.message.contains("footgun") })
     }
+
+    // MARK: - auth = "oauth" (apfel-run#1)
+
+    @Test("auth=oauth on non-https path -> error")
+    func oauthNonHTTPS() {
+        // Local path
+        let localCfg = ApfelConfig(profiles: [
+            "default": Profile(mcp: MCPSettings(servers: [
+                MCPServer(path: "/local/mcp.py", auth: .oauth)
+            ]))
+        ])
+        let localErrors = ConfigValidator.validate(localCfg).filter { $0.severity == .error }
+        #expect(localErrors.contains { $0.message.contains("oauth") && $0.message.contains("https") })
+
+        // Plain http (non-loopback)
+        let httpCfg = ApfelConfig(profiles: [
+            "default": Profile(mcp: MCPSettings(servers: [
+                MCPServer(path: "http://insecure.example/mcp", auth: .oauth)
+            ]))
+        ])
+        let httpErrors = ConfigValidator.validate(httpCfg).filter { $0.severity == .error }
+        #expect(httpErrors.contains { $0.message.contains("oauth") && $0.message.contains("https") })
+
+        // https is fine
+        let httpsCfg = ApfelConfig(profiles: [
+            "default": Profile(mcp: MCPSettings(servers: [
+                MCPServer(path: "https://mcp.example.com/mcp", auth: .oauth)
+            ]))
+        ])
+        #expect(ConfigValidator.validate(httpsCfg).filter { $0.severity == .error }.isEmpty)
+    }
+
+    @Test("two enabled auth=oauth servers -> error mentioning apfel#386")
+    func twoOAuthServersError() {
+        let cfg = ApfelConfig(profiles: [
+            "default": Profile(mcp: MCPSettings(servers: [
+                MCPServer(path: "https://a.example/mcp", auth: .oauth),
+                MCPServer(path: "https://b.example/mcp", auth: .oauth),
+            ]))
+        ])
+        let errors = ConfigValidator.validate(cfg).filter { $0.severity == .error }
+        #expect(errors.contains { $0.message.contains("apfel#386") })
+    }
+
+    @Test("one enabled + one disabled oauth server -> no error")
+    func disabledOAuthOK() {
+        let cfg = ApfelConfig(profiles: [
+            "default": Profile(mcp: MCPSettings(servers: [
+                MCPServer(path: "https://a.example/mcp", auth: .oauth),
+                MCPServer(path: "https://b.example/mcp", enabled: false, auth: .oauth),
+            ]))
+        ])
+        #expect(ConfigValidator.validate(cfg).filter { $0.severity == .error }.isEmpty)
+    }
+
+    @Test("auth=oauth with token_env -> warning about precedence")
+    func oauthWithTokenEnvWarns() {
+        let cfg = ApfelConfig(profiles: [
+            "default": Profile(mcp: MCPSettings(servers: [
+                MCPServer(path: "https://a.example/mcp", tokenEnv: "MY_TOKEN", auth: .oauth)
+            ]))
+        ])
+        let diagnostics = ConfigValidator.validate(cfg)
+        #expect(diagnostics.contains {
+            $0.severity == .warning && $0.message.contains("token_env") && $0.message.contains("OAuth")
+        })
+    }
 }

@@ -207,4 +207,40 @@ struct SchemaTests {
         #expect(decoded.profiles["chat"]?.mode == .chat)
         #expect(decoded.profiles["serve"]?.mode == .serve)
     }
+
+    // MARK: - mcp.server auth (apfel-run#1)
+
+    @Test("auth field decodes from TOML and JSON, absent -> nil")
+    func authFieldDecodes() throws {
+        let toml = """
+        [[profile.default.mcp.server]]
+        path = "https://mcp.example.com/mcp"
+        auth = "oauth"
+
+        [[profile.default.mcp.server]]
+        path = "/plain/mcp.py"
+        """
+        let cfg = try TOMLCoder.decode(ApfelConfig.self, from: toml)
+        let servers = try #require(cfg.profiles["default"]?.mcp?.servers)
+        #expect(servers[0].auth == .oauth)
+        #expect(servers[1].auth == nil)
+
+        let json = #"""
+        {"profile":{"default":{"mcp":{"server":[{"path":"https://m.example/mcp","auth":"oauth"}]}}}}
+        """#
+        let jsonCfg = try JSONCoder.decode(ApfelConfig.self, from: Data(json.utf8))
+        #expect(jsonCfg.profiles["default"]?.mcp?.servers.first?.auth == .oauth)
+    }
+
+    @Test("unknown auth value fails decode with clear error")
+    func unknownAuthValueFails() {
+        let toml = """
+        [[profile.default.mcp.server]]
+        path = "https://mcp.example.com/mcp"
+        auth = "saml"
+        """
+        #expect(throws: (any Error).self) {
+            _ = try TOMLCoder.decode(ApfelConfig.self, from: toml)
+        }
+    }
 }

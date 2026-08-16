@@ -15,9 +15,14 @@ public struct BuiltArgs: Equatable, Sendable {
 public enum FlagBuilder {
     /// Translate a profile + user args into the final argv+env pair for apfel.
     /// User args always append LAST so CLI flags override profile defaults.
+    ///
+    /// `launchToken` (apfel-run#1): an OAuth token resolved from the Keychain
+    /// at launch. When present it wins over `mcp.token_env`. The default `nil`
+    /// keeps the pre-OAuth behavior byte-identical.
     public static func build(profile: Profile,
                              userArgs: [String],
-                             environment: [String: String]) -> BuiltArgs {
+                             environment: [String: String],
+                             launchToken: ResolvedLaunchToken? = nil) -> BuiltArgs {
         var argv: [String] = []
         var env = environment
         var warnings: [String] = []
@@ -120,22 +125,29 @@ public enum FlagBuilder {
             if let ts = m.timeoutSeconds {
                 env["APFEL_MCP_TIMEOUT"] = String(ts)
             }
-            if let tokenEnv = m.tokenEnv {
+            if let launchToken {
+                // OAuth token resolved at launch wins over mcp.token_env.
+                env["APFEL_MCP_TOKEN"] = launchToken.token
+            } else if let tokenEnv = m.tokenEnv {
                 if let val = environment[tokenEnv], !val.isEmpty {
                     env["APFEL_MCP_TOKEN"] = val
                 } else {
                     warnings.append("mcp.token_env '\(tokenEnv)' is empty or not set")
                 }
             }
-            // Per-server token_env overrides are noted in warnings if we can't resolve
+            // Per-server token_env overrides are noted in warnings if we can't
+            // resolve - except for the server whose token the launchToken
+            // supplied. (apfel itself uses a single APFEL_MCP_TOKEN today -
+            // per-server tokens will be threaded once apfel#386 lands.)
             for (i, server) in m.servers.enumerated() where server.enabled {
                 if let tokenEnv = server.tokenEnv {
+                    if let launchToken,
+                       normalizeServerKey(server.path) == normalizeServerKey(launchToken.server) {
+                        continue
+                    }
                     if environment[tokenEnv]?.isEmpty ?? true {
                         warnings.append("mcp.server[\(i)].token_env '\(tokenEnv)' is empty or not set")
                     }
-                    // Note: apfel itself uses a single APFEL_MCP_TOKEN today - per-server
-                    // tokens will be threaded once apfel supports per-MCP auth. Recorded
-                    // here for forward-compat.
                 }
             }
         }

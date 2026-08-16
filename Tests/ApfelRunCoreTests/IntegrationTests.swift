@@ -238,6 +238,40 @@ struct IntegrationTests {
         #expect(result.stdout.contains(tmp))
     }
 
+    // MARK: - auth subcommand (apfel-run#1)
+
+    @Test("subprocess: auth status for a never-stored URL exits 4")
+    func authStatusNeverStored() throws {
+        // Unique random host: the keychain read is a guaranteed
+        // errSecItemNotFound, which returns without prompting.
+        let url = "https://never-logged-in-\(UUID().uuidString.lowercased()).example/mcp"
+        let result = try runBinary(args: ["auth", "status", url])
+        #expect(result.exit == 4)
+        #expect(result.stderr.contains("no credentials stored"))
+    }
+
+    @Test("subprocess: oauth profile with no stored credential exits 1 with 'apfel-run auth login' hint")
+    func oauthProfileNoCredentialFailsLoudly() throws {
+        // F5 guard: the launch wiring must never regress to try?-swallowing
+        // noCredential (which would execve into a silent 401).
+        let tmp = try makeTempDir()
+        defer { try? FileManager.default.removeItem(atPath: tmp) }
+        let url = "https://never-logged-in-\(UUID().uuidString.lowercased()).example/mcp"
+        try """
+        [[profile.default.mcp.server]]
+        path = "\(url)"
+        enabled = true
+        auth = "oauth"
+        """.write(toFile: tmp + "/apfel.toml", atomically: true, encoding: .utf8)
+
+        let result = try runBinary(args: ["--", "--version"], cwd: tmp)
+        #expect(result.exit == 1)
+        #expect(result.stderr.contains("apfel-run auth login"))
+        #expect(result.stderr.contains(url))
+        // apfel must NOT have been exec'd
+        #expect(!result.stdout.contains("apfel v"))
+    }
+
     // MARK: - Helpers
 
     struct RunResult {

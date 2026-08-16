@@ -4,7 +4,7 @@ import Foundation
 /// everything else to apfel verbatim.
 ///
 /// Priority at position 0:
-///   - `config`, `migrate-config` = our subcommand, rest is subcommand args
+///   - `config`, `auth`, `migrate-config` = our subcommand, rest is subcommand args
 ///   - `--help`/`-h`, `--version`/`-v` = our own help/version
 ///   - anything else = forward to apfel (with profile applied)
 ///
@@ -18,6 +18,7 @@ public enum PlannerV2 {
         case showHelp
         case showVersion
         case configSubcommand(args: [String])
+        case authSubcommand(args: [String])
         case migrateConfig(args: [String])
     }
 
@@ -34,6 +35,8 @@ public enum PlannerV2 {
             return .showVersion
         case "config":
             return .configSubcommand(args: Array(args.dropFirst()))
+        case "auth":
+            return .authSubcommand(args: Array(args.dropFirst()))
         case "migrate-config":
             return .migrateConfig(args: Array(args.dropFirst()))
         case "--":

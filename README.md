@@ -221,7 +221,21 @@ apfel-run -p research "summarise apfel.franzai.com"
 | `apfel-run config profiles` | List profile names, one per line. Sorted alphabetically. |
 | `apfel-run config init [PATH]` | Write a commented starter config. Default: `~/.config/apfel/config.toml`. Refuses to overwrite. |
 | `apfel-run config edit` | Open the active config in `$EDITOR` (defaults to `vi`). |
+| `apfel-run auth login <https-mcp-url>` | OAuth 2.1 login for a remote MCP server (e.g. Evernote). Token goes to the Keychain; every later launch resolves and auto-refreshes it. |
+| `apfel-run auth list` / `auth status <url>` / `auth logout <url>` | Inspect and remove stored OAuth credentials. |
 | `apfel-run migrate-config` | v0.1 → v0.2: read legacy `~/.config/apfel/mcps.conf`, write `config.toml`, rename legacy to `.v0.1.bak`. |
+
+### OAuth for remote MCPs
+
+Log in once, then `apfel-run` just works:
+
+```bash
+apfel-run auth login https://mcp.evernote.com/mcp
+```
+
+Mark the server in your profile with `auth = "oauth"` and the stored token is
+injected (and refreshed) at every launch. Full flow, exit codes, and
+limitations: [docs/auth.md](docs/auth.md).
 
 ## Config schema (short)
 
@@ -234,7 +248,7 @@ Full reference: [docs/config-reference.md](docs/config-reference.md).
 | `[profile.NAME.context]` | `strategy`, `max_turns`, `output_reserve` |
 | `[profile.NAME.server]` | `port`, `host`, `cors`, `max_concurrent`, `allowed_origins`, `token_auto`, `token_env`, `public_health`, `origin_check`, `footgun` |
 | `[profile.NAME.mcp]` | `timeout_seconds`, `token_env` |
-| `[[profile.NAME.mcp.server]]` | `path`, `enabled`, `token_env` |
+| `[[profile.NAME.mcp.server]]` | `path`, `enabled`, `token_env`, `auth` |
 
 Every key maps to an apfel CLI flag or `APFEL_*` env var. `apfel-run config show --format flags` prints the exact mapping for a given profile.
 

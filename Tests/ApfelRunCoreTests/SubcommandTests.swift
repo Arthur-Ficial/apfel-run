@@ -57,6 +57,40 @@ struct SubcommandTests {
         #expect(r.stdout.contains("APFEL_TOKEN=<redacted>"))
     }
 
+    @Test("config show --format flags prints auth=oauth marker line and never reads keychain")
+    func showFlagsOAuthMarker() {
+        // Purity lock: configShow calls FlagBuilder.build with launchToken: nil,
+        // so `config show` performs zero keychain and zero network I/O. The
+        // marker line is informational only - no token bytes can appear because
+        // none are resolved.
+        let cfg = ApfelConfig(profiles: [
+            "default": Profile(mcp: MCPSettings(servers: [
+                MCPServer(path: "https://mcp.example.com/mcp", auth: .oauth)
+            ]))
+        ])
+        let loader = LoaderResult(config: cfg, source: .projectLocal, path: "/tmp/x.toml")
+        let r = Subcommands.configShow(loaderResult: loader, profile: nil,
+                                       format: .flags, environment: [:])
+        #expect(r.exitCode == 0)
+        #expect(r.stdout.contains("auth=oauth (token resolved from Keychain at launch)"))
+        #expect(!r.stdout.contains("APFEL_MCP_TOKEN="))
+    }
+
+    @Test("config show --format flags redacts APFEL_MCP_TOKEN when profile token_env set")
+    func showFlagsRedactsMCPToken() {
+        let cfg = ApfelConfig(profiles: [
+            "default": Profile(mcp: MCPSettings(tokenEnv: "MY_MCP_TOKEN", servers: [
+                MCPServer(path: "https://mcp.example.com/mcp", auth: .oauth)
+            ]))
+        ])
+        let loader = LoaderResult(config: cfg, source: .projectLocal, path: "/tmp/x.toml")
+        let r = Subcommands.configShow(loaderResult: loader, profile: nil,
+                                       format: .flags,
+                                       environment: ["MY_MCP_TOKEN": "mcp-secret-abc"])
+        #expect(!r.stdout.contains("mcp-secret-abc"))
+        #expect(r.stdout.contains("APFEL_MCP_TOKEN=<redacted>"))
+    }
+
     @Test("config show --format flags with unknown profile -> error")
     func showFlagsUnknownProfile() {
         let cfg = ApfelConfig(profiles: ["default": Profile()])

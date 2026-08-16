@@ -92,6 +92,22 @@ public enum ConfigValidator {
                     out.append(.init(severity: .error, profile: name,
                                      message: "mcp.server[\(i)] refuses to send token_env over plaintext http:// URL"))
                 }
+                if srv.auth == .oauth {
+                    let secure = URL(string: srv.path).map(isSecureOrLoopback(_:)) ?? false
+                    if !secure {
+                        out.append(.init(severity: .error, profile: name,
+                                         message: "mcp.server[\(i)] auth = \"oauth\" requires an https:// URL (got '\(srv.path)')"))
+                    }
+                    if srv.tokenEnv != nil {
+                        out.append(.init(severity: .warning, profile: name,
+                                         message: "mcp.server[\(i)] sets both auth = \"oauth\" and token_env - token_env overrides the stored OAuth token"))
+                    }
+                }
+            }
+            let oauthCount = mcp.servers.filter { $0.enabled && $0.auth == .oauth }.count
+            if oauthCount > 1 {
+                out.append(.init(severity: .error, profile: name,
+                                 message: "profile enables \(oauthCount) OAuth MCP servers but apfel supports one MCP token today (apfel#386) - disable one or move it to its own profile"))
             }
         }
     }

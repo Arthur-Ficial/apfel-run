@@ -69,6 +69,15 @@ public enum Subcommands {
                         }
                     }
                 }
+                // OAuth servers: informational marker only. configShow calls
+                // FlagBuilder.build with launchToken: nil, so `config show`
+                // performs zero keychain and zero network I/O.
+                if let mcp = resolved.profile.mcp {
+                    for (i, server) in mcp.servers.enumerated()
+                    where server.enabled && server.auth == .oauth {
+                        lines.append("# mcp.server[\(i)]: auth=oauth (token resolved from Keychain at launch)")
+                    }
+                }
                 if !built.warnings.isEmpty {
                     lines.append("# warnings:")
                     for w in built.warnings {

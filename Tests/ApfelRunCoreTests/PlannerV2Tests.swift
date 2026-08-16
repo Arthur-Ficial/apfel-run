@@ -100,4 +100,27 @@ struct PlannerV2Tests {
         let action = PlannerV2.plan(args: ["--serve", "--port", "11500"])
         #expect(action == .runApfel(profile: nil, args: ["--serve", "--port", "11500"]))
     }
+
+    // MARK: - auth subcommand (OAuth 2.1, apfel-run#1)
+
+    @Test("auth subcommand captured at position 0")
+    func authSubcommand() {
+        #expect(PlannerV2.plan(args: ["auth", "login", "https://x/mcp"])
+                == .authSubcommand(args: ["login", "https://x/mcp"]))
+        #expect(PlannerV2.plan(args: ["auth"]) == .authSubcommand(args: []))
+    }
+
+    @Test("auth past position 0 forwards to apfel")
+    func authPastPositionZeroForwards() {
+        // PIN test: a prompt mentioning "auth" must never be intercepted.
+        #expect(PlannerV2.plan(args: ["explain", "auth"])
+                == .runApfel(profile: nil, args: ["explain", "auth"]))
+    }
+
+    @Test("-- auth forwards verbatim")
+    func doubleDashAuthForwards() {
+        // PIN test: the `--` escape hatch beats subcommand interception.
+        #expect(PlannerV2.plan(args: ["--", "auth", "list"])
+                == .runApfel(profile: nil, args: ["auth", "list"]))
+    }
 }

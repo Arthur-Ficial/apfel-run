@@ -4,7 +4,7 @@ import Foundation
 import Darwin
 #endif
 
-let version = "0.2.0"
+let version = "0.3.0"
 
 let env = ProcessInfo.processInfo.environment
 let cwd = FileManager.default.currentDirectoryPath
@@ -28,12 +28,17 @@ case .configSubcommand(let subArgs):
     handleConfigSubcommand(subArgs: subArgs)
     exit(0)
 
+case .authSubcommand(let subArgs):
+    // SE-0343 top-level await (F6): no sync bridge, handleAuth exits itself.
+    await handleAuth(subArgs: subArgs)
+    exit(0)
+
 case .migrateConfig(let subArgs):
     handleMigrateConfig(subArgs: subArgs)
     exit(0)
 
 case .runApfel(let profile, let userArgs):
-    handleRunApfel(profile: profile, userArgs: userArgs)
+    await handleRunApfel(profile: profile, userArgs: userArgs)
     exit(126)  // only reached if execve itself failed
 }
 
@@ -45,7 +50,7 @@ func handleConfigSubcommand(subArgs: [String]) {
         FileHandle.standardError.write(Data("usage: apfel-run config <show|path|validate|profiles|init|edit>\n".utf8))
         exit(2)
     }
-    var tail = Array(subArgs.dropFirst())
+    let tail = Array(subArgs.dropFirst())
     switch sub {
     case "show":
         var format: Subcommands.ShowFormat = .toml
@@ -108,8 +113,7 @@ func handleConfigSubcommand(subArgs: [String]) {
             try? "".write(toFile: target, atomically: true, encoding: .utf8)
         }
         let editorArgs = [editor, target]
-        var envArray: [String] = env.map { "\($0.key)=\($0.value)" }
-        _ = envArray  // used via execve below
+        let envArray: [String] = env.map { "\($0.key)=\($0.value)" }
         if let editorPath = resolveBinary(editor) {
             let argvC = editorArgs.map { strdup($0) } + [nil]
             let envvC = envArray.map { strdup($0) } + [nil]
@@ -137,7 +141,7 @@ func handleMigrateConfig(subArgs: [String]) {
     }
 }
 
-func handleRunApfel(profile: String?, userArgs: [String]) {
+func handleRunApfel(profile: String?, userArgs: [String]) async {
     let loader = ConfigLoader.load(environment: env, cwd: cwd, home: home)
     let resolved: ResolvedProfile
     do {
@@ -152,9 +156,48 @@ func handleRunApfel(profile: String?, userArgs: [String]) {
         exit(2)
     }
 
+    // OAuth launch token (apfel-run#1). F5: EXPLICIT do/catch - `try?` is
+    // banned here (a swallowed noCredential would execve into the exact
+    // silent 401 this feature exists to kill).
+    var launchToken: ResolvedLaunchToken? = nil
+    let hasOAuthServer = resolved.profile.mcp?.servers
+        .contains { $0.enabled && $0.auth == .oauth } ?? false
+    if hasOAuthServer {
+        do {
+            // F4: flock serializes load->refresh->save across concurrent
+            // launches so a rotated refresh token is never replayed.
+            let lock = RefreshLock(path: home + "/.config/apfel/.auth-refresh.lock")
+            launchToken = try await lock.withLock {
+                try await LaunchTokenResolver.resolve(
+                    profile: resolved.profile,
+                    environment: env,
+                    store: KeychainTokenStore(items: SecItemKeychain()),
+                    flow: OAuthFlow(transport: URLSessionTransport(),
+                                    clock: SystemClock(),
+                                    random: SystemRandomBytes()),
+                    clock: SystemClock())
+            }
+        } catch let error as AuthError {
+            FileHandle.standardError.write(Data("apfel-run: \(error.message)\n".utf8))
+            if case .multipleOAuthServers = error {
+                exit(2)  // config error
+            }
+            exit(1)  // refreshFailed / noCredential / keychain failure
+        } catch {
+            FileHandle.standardError.write(Data("apfel-run: \(error)\n".utf8))
+            exit(1)
+        }
+        // F12: serve mode outlives the token - surface the cliff up front.
+        if let warning = LaunchTokenResolver.serveExpiryWarning(mode: resolved.profile.mode,
+                                                                launchToken: launchToken) {
+            FileHandle.standardError.write(Data("apfel-run: warning: \(warning)\n".utf8))
+        }
+    }
+
     let built = FlagBuilder.build(profile: resolved.profile,
                                   userArgs: userArgs,
-                                  environment: env)
+                                  environment: env,
+                                  launchToken: launchToken)
     for w in built.warnings {
         FileHandle.standardError.write(Data("apfel-run: warning: \(w)\n".utf8))
     }
@@ -231,6 +274,13 @@ func helpText() -> String {
                     Write a starter config to ~/.config/apfel/config.toml
                     (or the given PATH)
       config edit   Open the config in $EDITOR (vi by default)
+      auth login <https-mcp-url> [--scope SCOPE] [--timeout SECONDS] [--no-browser]
+                    OAuth 2.1 login for a remote MCP server (token -> Keychain)
+      auth list     List stored OAuth credentials and their validity
+      auth status <https-mcp-url>
+                    Check one credential (exit 0 valid, 1 expired, 4 none)
+      auth logout <https-mcp-url>
+                    Remove the stored credential
       migrate-config
                     Read legacy ~/.config/apfel/mcps.conf (v0.1), write
                     equivalent config.toml, rename legacy to .v0.1.bak
