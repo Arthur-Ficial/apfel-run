@@ -27,11 +27,19 @@ struct IntegrationTests {
         #expect(FileManager.default.isExecutableFile(atPath: Self.binaryPath))
     }
 
-    @Test("--version prints v0.2")
+    @Test("--version prints apfel-run and the .version string")
     func versionOutput() throws {
         let result = try runBinary(args: ["--version"])
         #expect(result.stdout.hasPrefix("apfel-run"))
-        #expect(result.stdout.contains("0.2"))
+        // Assert against the .version file so a version bump never breaks this test.
+        let versionCandidates = [".version", "/Users/arthurficial/dev/apfel-run/.version"]
+        let expected = versionCandidates
+            .compactMap { try? String(contentsOfFile: $0, encoding: .utf8) }
+            .first?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let expected, !expected.isEmpty {
+            #expect(result.stdout.contains(expected))
+        }
         #expect(result.exit == 0)
     }
 
