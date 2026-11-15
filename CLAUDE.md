@@ -42,6 +42,10 @@ make install                    # /usr/local/bin/apfel-run
 make uninstall
 ```
 
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on `macos-26` for pushes to main and PRs: `swift build -c release`, then `swift test`. The integration tests drive `.build/release/apfel-run` (resolved from the package root via `TestPaths`), so the release build must come first; a missing binary fails the suite. Tests that need a real apfel (the two passthrough tests, skipped when `apfel` is not on PATH) or Apple Intelligence (the MCP matrix suites, gated on `APFEL_RUN_MCP_MATRIX=1`) do not run on CI.
+
 ## When adding / touching features
 
 Flow for any change, no exceptions:

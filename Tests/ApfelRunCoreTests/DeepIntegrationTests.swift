@@ -7,7 +7,7 @@ import Testing
 
 @Suite("Deep integration - real config scenarios")
 struct DeepIntegrationTests {
-    static let binary = "/Users/arthurficial/dev/apfel-run/.build/release/apfel-run"
+    static let binary = TestPaths.releaseBinary
 
     @Test("Binary picks up project-local apfel.toml automatically")
     func projectLocalAutoDiscovery() throws {
@@ -273,8 +273,8 @@ struct DeepIntegrationTests {
 @Suite("Real MCP arithmetic (gated on APFEL_RUN_MCP_MATRIX=1)",
        .enabled(if: ProcessInfo.processInfo.environment["APFEL_RUN_MCP_MATRIX"] == "1"))
 struct RealMCPArithmeticTests {
-    static let binary = "/Users/arthurficial/dev/apfel-run/.build/release/apfel-run"
-    static let calcMCP = "/Users/arthurficial/dev/apfel/mcp/calculator/server.py"
+    static let binary = TestPaths.releaseBinary
+    static let calcMCP = TestPaths.calculatorMCP
 
     @Test("Calculator tool fires via apfel-run config (stderr mcp: line)")
     func calculatorFiresTool() throws {
