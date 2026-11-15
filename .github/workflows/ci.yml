@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    # Pinned, not macos-latest: a runner rollover must not silently change what we test on.
+    runs-on: macos-26
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Select latest Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [[ -n "$latest" ]]; then
+            echo "Selecting $latest"
+            sudo xcode-select -s "$latest/Contents/Developer"
+          fi
+          echo "Active SDK: $(xcrun --show-sdk-version)"
+          echo "Swift: $(swift --version 2>&1 | head -1)"
+
+      - name: Build (release)
+        # The integration tests drive .build/release/apfel-run and fail if it is missing.
+        run: swift build -c release
+
+      - name: Test
+        # Model-free and network-free. The MCP matrix suites need Apple Intelligence
+        # and stay gated on APFEL_RUN_MCP_MATRIX=1, which CI never sets.
+        run: swift test

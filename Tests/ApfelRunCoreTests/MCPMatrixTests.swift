@@ -14,8 +14,8 @@ import Testing
 @Suite("MCP matrix - apfel-run + real apfel + real MCPs",
        .enabled(if: ProcessInfo.processInfo.environment["APFEL_RUN_MCP_MATRIX"] == "1"))
 struct MCPMatrixTests {
-    static let binary = "/Users/arthurficial/dev/apfel-run/.build/release/apfel-run"
-    static let calculatorMCP = "/Users/arthurficial/dev/apfel/mcp/calculator/server.py"
+    static let binary = TestPaths.releaseBinary
+    static let calculatorMCP = TestPaths.calculatorMCP
 
     @Test("Calculator MCP: registered via apfel-run config, tool announced by apfel")
     func calculatorRegistered() throws {
